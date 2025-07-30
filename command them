@@ -74,11 +74,11 @@ end
 
 -- Automation Tab (First Tab)
 local autoKillConnection
-local automationTab = Window:CreateTab("Automation", 4483362458)
+local automationTab = Window:CreateTab("Die", 4483362458)
 
 automationTab:CreateSection("Automated Behavior")
 automationTab:CreateToggle({
-	Name = "Auto Kill All NPCs (with network)",
+	Name = "auto kill(with network)",
 	CurrentValue = false,
 	Callback = function(enabled)
 		if autoKillConnection then autoKillConnection:Disconnect() end
