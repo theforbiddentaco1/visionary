@@ -72,26 +72,29 @@ local function tagnpc(npc, label)
 	t.TextStrokeColor3 = Color3.new(0,0,0)
 end
 
--- Automation Tab (First Tab)
 local autoKillConnection
-local automationTab = Window:CreateTab("Die", 4483362458)
+local automationTab = Window:CreateTab("blatant", "rewind")
 
 automationTab:CreateSection("Automated Behavior")
 automationTab:CreateToggle({
-	Name = "auto kill(with network)",
+	Name = "Auto Kill All NPCs (with network)",
 	CurrentValue = false,
 	Callback = function(enabled)
 		if autoKillConnection then autoKillConnection:Disconnect() end
 		if enabled then
 			autoKillConnection = Services.RunService.Heartbeat:Connect(function()
 				for _, model in ipairs(Services.Workspace:GetDescendants()) do
-					if model:IsA("Model") and not Services.Players:GetPlayerFromCharacter(model) then
+					repeat
+						if not model:IsA("Model") then return end
+						if Services.Players:GetPlayerFromCharacter(model) then return end
+						if model:IsDescendantOf(Services.Workspace:FindFirstChild("Troops")) then return end
+
 						local hum = model:FindFirstChildOfClass("Humanoid")
 						local hrp = model:FindFirstChild("HumanoidRootPart")
 						if hum and hrp and hrp.ReceiveAge == 0 and hum.Health > 0 then
 							hum:ChangeState(15)
 						end
-					end
+					until true
 				end
 			end)
 		end
