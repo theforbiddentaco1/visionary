@@ -41,7 +41,6 @@ local function light(target, color)
 end
 
 local function isnpc(model)
-	if model:IsDescendantOf(Services.Workspace:FindFirstChild("Enemies")) then return false end
 	local hum = model:FindFirstChildOfClass("Humanoid")
 	local player = Services.Players:GetPlayerFromCharacter(model)
 	return hum and not player
@@ -72,6 +71,32 @@ local function tagnpc(npc, label)
 	t.TextStrokeTransparency = 0.2
 	t.TextStrokeColor3 = Color3.new(0,0,0)
 end
+
+-- Automation Tab (First Tab)
+local autoKillConnection
+local automationTab = Window:CreateTab("Automation", 4483362458)
+
+automationTab:CreateSection("Automated Behavior")
+automationTab:CreateToggle({
+	Name = "Auto Kill All NPCs (with network)",
+	CurrentValue = false,
+	Callback = function(enabled)
+		if autoKillConnection then autoKillConnection:Disconnect() end
+		if enabled then
+			autoKillConnection = Services.RunService.Heartbeat:Connect(function()
+				for _, model in ipairs(Services.Workspace:GetDescendants()) do
+					if model:IsA("Model") and not Services.Players:GetPlayerFromCharacter(model) then
+						local hum = model:FindFirstChildOfClass("Humanoid")
+						local hrp = model:FindFirstChild("HumanoidRootPart")
+						if hum and hrp and hrp.ReceiveAge == 0 and hum.Health > 0 then
+							hum:ChangeState(15)
+						end
+					end
+				end
+			end)
+		end
+	end,
+})
 
 local followOffsets = {
 	Vector3.new(-4, 0, 0),
@@ -207,7 +232,6 @@ mouse.Button1Down:Connect(function()
 	local model = target:FindFirstAncestorOfClass("Model")
 	if not model or not model:FindFirstChild("HumanoidRootPart") then return end
 	if Services.Players:GetPlayerFromCharacter(model) then return end
-	if model:IsDescendantOf(Services.Workspace:FindFirstChild("Enemies")) then return end
 
 	local hrp = model:FindFirstChild("HumanoidRootPart")
 	if not hrp or hrp.Anchored or hrp.ReceiveAge ~= 0 then
