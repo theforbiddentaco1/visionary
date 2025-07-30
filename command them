@@ -1,0 +1,249 @@
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+local Window = Rayfield:CreateWindow({
+	Name = "visionary command kit",
+	Theme = "AmberGlow",
+	LoadingTitle = "npcs are SMART now",
+	LoadingSubtitle = "tesla brain chip v8",
+	ConfigurationSaving = {
+		Enabled = true,
+		FileName = "multicontrolvisionary",
+	},
+	KeySystem = false,
+})
+
+local Services = {
+	TweenService = game:GetService("TweenService"),
+	RunService = game:GetService("RunService"),
+	Players = game:GetService("Players"),
+	Workspace = game:GetService("Workspace"),
+}
+local lp = Services.Players.LocalPlayer
+local mouse = lp:GetMouse()
+
+local rad = 100
+local medium = TweenInfo.new(0.67)
+
+local highlight = Instance.new("Highlight")
+highlight.Name = "NPC_Highlight"
+highlight.Parent = lp
+highlight.FillTransparency = 1
+highlight.OutlineTransparency = 1
+
+local function light(target, color)
+	task.spawn(function()
+		highlight.Adornee = target
+		highlight.OutlineColor = color
+		Services.TweenService:Create(highlight, medium, { OutlineTransparency = 0 }):Play()
+		task.wait(0.5)
+		Services.TweenService:Create(highlight, medium, { OutlineTransparency = 1 }):Play()
+	end)
+end
+
+local function isnpc(model)
+	if model:IsDescendantOf(Services.Workspace:FindFirstChild("Enemies")) then return false end
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	local player = Services.Players:GetPlayerFromCharacter(model)
+	return hum and not player
+end
+
+local function tagnpc(npc, label)
+	if not npc or npc:FindFirstChild("RayUI") then return end
+	local b = Instance.new("BillboardGui")
+	b.Name = "RayUI"
+	b.Size = UDim2.new(0, 140, 0, 40)
+	b.StudsOffset = Vector3.new(0, 4, 0)
+	b.AlwaysOnTop = true
+	b.Adornee = npc:FindFirstChild("Head") or npc:FindFirstChild("HumanoidRootPart")
+	b.Parent = npc
+	b.MaxDistance = 100
+	b.ExtentsOffsetWorldSpace = Vector3.new(0, 1, 0)
+
+	local t = Instance.new("TextLabel", b)
+	t.Size = UDim2.new(1, 0, 1, 0)
+	t.BackgroundTransparency = 1
+	t.Text = label
+	t.TextColor3 = Color3.fromRGB(200, 0, 75)
+	t.TextScaled = false
+	t.TextSize = 13
+	t.Font = Enum.Font.Jura
+	t.TextWrapped = true
+	t.ClipsDescendants = true
+	t.TextStrokeTransparency = 0.2
+	t.TextStrokeColor3 = Color3.new(0,0,0)
+end
+
+local followOffsets = {
+	Vector3.new(-4, 0, 0),
+	Vector3.new(-4.2, 0, 0.15),
+	Vector3.new(-3.8, 0, -0.15),
+	Vector3.new(-4.1, 0, 0.25),
+	Vector3.new(-3.9, 0, -0.2),
+}
+
+local npcTabs = {}
+for i = 1, 5 do
+	npcTabs[i] = {
+		Tab = Window:CreateTab("NPC " .. i, 4483362458),
+		Slot = nil,
+		ClickEnabled = false,
+		FollowCon = nil,
+		OriginalChar = nil,
+		ControlEnabled = false,
+	}
+end
+
+for i, npcState in ipairs(npcTabs) do
+	local tab = npcState.Tab
+
+	tab:CreateSection("Click Detection")
+	tab:CreateToggle({
+		Name = "enable selection for NPC " .. i,
+		CurrentValue = false,
+		Callback = function(val)
+			npcState.ClickEnabled = val
+		end,
+	})
+
+	tab:CreateSection("Actions")
+
+	tab:CreateButton({
+		Name = "kill it",
+		Callback = function()
+			local npc = npcState.Slot
+			if npc then
+				local hrp = npc:FindFirstChild("HumanoidRootPart")
+				if hrp and hrp.ReceiveAge == 0 then
+					local hum = npc:FindFirstChildOfClass("Humanoid")
+					if hum then hum:ChangeState(15) end
+				end
+			end
+		end,
+	})
+	tab:CreateButton({
+		Name = "bring it",
+		Callback = function()
+			local npc = npcState.Slot
+			if npc and lp.Character then
+				local hrp = npc:FindFirstChild("HumanoidRootPart")
+				if hrp and hrp.ReceiveAge == 0 then
+					npc:PivotTo(lp.Character:GetPivot())
+				end
+			end
+		end,
+	})
+	tab:CreateButton({
+		Name = "make it sit",
+		Callback = function()
+			local npc = npcState.Slot
+			local hum = npc and npc:FindFirstChildOfClass("Humanoid")
+			local hrp = npc and npc:FindFirstChild("HumanoidRootPart")
+			if hum and hrp and hrp.ReceiveAge == 0 then
+				hum.Sit = not hum.Sit
+			end
+		end,
+	})
+	tab:CreateButton({
+		Name = "make it jump",
+		Callback = function()
+			local npc = npcState.Slot
+			local hum = npc and npc:FindFirstChildOfClass("Humanoid")
+			local hrp = npc and npc:FindFirstChild("HumanoidRootPart")
+			if hum and hrp and hrp.ReceiveAge == 0 then
+				hum:ChangeState(3)
+			end
+		end,
+	})
+	tab:CreateToggle({
+		Name = "make it smart",
+		CurrentValue = false,
+		Callback = function(enabled)
+			if npcState.FollowCon then npcState.FollowCon:Disconnect() end
+			if enabled then
+				npcState.FollowCon = Services.RunService.RenderStepped:Connect(function()
+					local npc = npcState.Slot
+					if npc then
+						local hrp = npc:FindFirstChild("HumanoidRootPart")
+						local hum = npc:FindFirstChildOfClass("Humanoid")
+						local lpHrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+						if hrp and hum and hrp.ReceiveAge == 0 and lpHrp then
+							local offset = followOffsets[i] or Vector3.new(-4,0,0)
+							hum:MoveTo(lpHrp.Position + offset)
+							if hum.WalkSpeed < 24 then
+								hum.WalkSpeed = 24
+							end
+							for _, part in ipairs(npc:GetDescendants()) do
+								if part:IsA("BasePart") then
+									pcall(function()
+										part.AssemblyMass = 5000
+									end)
+								end
+							end
+						end
+					end
+				end)
+			end
+		end,
+	})
+
+	tab:CreateToggle({
+		Name = "contol it (buggy)",
+		CurrentValue = false,
+		Callback = function(on)
+			npcState.ControlEnabled = on
+			if not on and npcState.OriginalChar then
+				lp.Character = npcState.OriginalChar
+				Services.Workspace.CurrentCamera.CameraSubject = npcState.OriginalChar:FindFirstChild("Humanoid")
+				npcState.OriginalChar = nil
+			end
+		end,
+	})
+end
+
+mouse.Button1Down:Connect(function()
+	local target = mouse.Target
+	if not target or not target.Parent then return end
+
+	local model = target:FindFirstAncestorOfClass("Model")
+	if not model or not model:FindFirstChild("HumanoidRootPart") then return end
+	if Services.Players:GetPlayerFromCharacter(model) then return end
+	if model:IsDescendantOf(Services.Workspace:FindFirstChild("Enemies")) then return end
+
+	local hrp = model:FindFirstChild("HumanoidRootPart")
+	if not hrp or hrp.Anchored or hrp.ReceiveAge ~= 0 then
+		light(model, Color3.fromRGB(255, 0, 0))
+		return
+	end
+
+	for index, npcState in ipairs(npcTabs) do
+		if npcState.ClickEnabled then
+			npcState.Slot = model
+			tagnpc(model, "npc " .. index)
+			light(model, Color3.fromRGB(0, 255, 0))
+		end
+	end
+end)
+
+Services.RunService.RenderStepped:Connect(function()
+	if sethiddenproperty then
+		sethiddenproperty(lp, "SimulationRadius", rad)
+	else
+		lp.SimulationRadius = rad
+	end
+
+	for _, npcState in ipairs(npcTabs) do
+		local npc = npcState.Slot
+		if npcState.ControlEnabled and npc and npc ~= lp.Character then
+			local hrp = npc:FindFirstChild("HumanoidRootPart")
+			if hrp and hrp.ReceiveAge == 0 then
+				if not npcState.OriginalChar then
+					npcState.OriginalChar = lp.Character
+				end
+				lp.Character = npc
+				Services.Workspace.CurrentCamera.CameraSubject = hrp
+			end
+		end
+	end
+end)
+
+Rayfield:LoadConfiguration()
