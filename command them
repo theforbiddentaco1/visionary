@@ -73,7 +73,7 @@ local function tagnpc(npc, label)
 end
 
 local autoKillConnection
-local automationTab = Window:CreateTab("blatant", "rewind")
+local automationTab = Window:CreateTab("kill", 4483362458)
 
 automationTab:CreateSection("Automated Behavior")
 automationTab:CreateToggle({
@@ -84,17 +84,18 @@ automationTab:CreateToggle({
 		if enabled then
 			autoKillConnection = Services.RunService.Heartbeat:Connect(function()
 				for _, model in ipairs(Services.Workspace:GetDescendants()) do
-					repeat
-						if not model:IsA("Model") then return end
-						if Services.Players:GetPlayerFromCharacter(model) then return end
-						if model:IsDescendantOf(Services.Workspace:FindFirstChild("Troops")) then return end
-
-						local hum = model:FindFirstChildOfClass("Humanoid")
-						local hrp = model:FindFirstChild("HumanoidRootPart")
-						if hum and hrp and hrp.ReceiveAge == 0 and hum.Health > 0 then
-							hum:ChangeState(15)
+					if model:IsA("Model") then
+						local isPlayerChar = Services.Players:GetPlayerFromCharacter(model) ~= nil
+						local isYourChar = model == lp.Character
+						local inTroops = model:IsDescendantOf(Services.Workspace:FindFirstChild("Troops"))
+						if not isPlayerChar and not isYourChar and not inTroops then
+							local hum = model:FindFirstChildOfClass("Humanoid")
+							local hrp = model:FindFirstChild("HumanoidRootPart")
+							if hum and hrp and hrp.ReceiveAge == 0 and hum.Health > 0 then
+								hum:ChangeState(15)
+							end
 						end
-					until true
+					end
 				end
 			end)
 		end
