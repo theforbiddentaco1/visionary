@@ -126,125 +126,6 @@ if not gui then
 end
 -- end c2
 
--- === Ability Attachment Assist Button ===
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Remotes = ReplicatedStorage:WaitForChild("Remotes")
-local useAbility = Remotes:WaitForChild("UseVisioniteAbility")
-
-local assistActive = false
-local attachedEnemy = nil
-local assistDebounce = false
-
-local function getAttachedEnemy()
-	local ap = character:FindFirstChild("AbilityWeld", true)
-	if ap and ap:IsA("AlignPosition") then
-		local rootAttachment = ap.Attachment1
-		if rootAttachment then
-			local root = rootAttachment.Parent
-			if root then
-				return root:FindFirstAncestorOfClass("Model")
-			end
-		end
-	end
-	return nil
-end
-
--- GUI Button
-local assistButton = Instance.new("Frame")
-assistButton.Size = UDim2.new(0, 30, 0, 30)
-assistButton.Position = UDim2.new(0, 10, 1, -150)
-assistButton.AnchorPoint = Vector2.new(0, 1)
-assistButton.BackgroundColor3 = Color3.fromRGB(190, 0, 190)
-assistButton.BackgroundTransparency = 0.2
-assistButton.BorderSizePixel = 0
-assistButton.Parent = screenGui
-
-local assistText = Instance.new("TextLabel")
-assistText.Size = UDim2.new(1, 0, 1, 0)
-assistText.BackgroundTransparency = 1
-assistText.Text = ";"
-assistText.TextColor3 = Color3.new(1, 1, 1)
-assistText.TextScaled = true
-assistText.Font = Enum.Font.Jura
-assistText.Parent = assistButton
-
-local function tryAttachToClosest()
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
-
-	local closest = nil
-	local minDist = math.huge
-	for _, enemy in ipairs(workspace.Enemies:GetChildren()) do
-		local humanoid = enemy:FindFirstChildOfClass("Humanoid")
-		local root = enemy:FindFirstChild("HumanoidRootPart")
-		if enemy:IsA("Model") and humanoid and humanoid.Health > 0 and root then
-			local dist = (hrp.Position - root.Position).Magnitude
-			if dist < minDist then
-				minDist = dist
-				closest = root
-			end
-		end
-	end
-
-	if closest then
-		hrp.CFrame = closest.CFrame * CFrame.new(0, 0, 5)
-	end
-end
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if input.KeyCode == Enum.KeyCode.Semicolon then
-		assistActive = not assistActive
-		assistButton.BackgroundColor3 = assistActive and Color3.fromRGB(190, 0, 190) or Color3.fromRGB(60, 60, 60)
-	end
-end)
-
-task.spawn(function()
-	while true do
-		if assistActive and not assistDebounce then
-			assistDebounce = true
-
-			useAbility:FireServer()
-
-			task.delay(0.75, function()
-				local currentAttachment = getAttachedEnemy()
-				if not currentAttachment then
-					tryAttachToClosest()
-				end
-
-				-- Monitor enemy death
-				task.spawn(function()
-					while assistActive do
-						local attached = getAttachedEnemy()
-						if attached then
-							local humanoid = attached:FindFirstChildOfClass("Humanoid")
-							if humanoid then
-								humanoid.Died:Wait()
-								task.wait(0.1)
-								useAbility:FireServer()
-								break
-							end
-						end
-						task.wait(0.1)
-					end
-				end)
-			end)
-
-			task.wait(2.5)
-			assistDebounce = false
-		end
-		task.wait(0.1)
-	end
-end)
-
--- Keep GUI on character respawn
-player.CharacterAdded:Connect(function(newChar)
-	character = newChar
-end)
-
-
--- end c2.5??
-
 local function updateGui()
 	for i = 1, #modeLabels do
 		local frame = gui:FindFirstChild("Mode"..i)
@@ -338,6 +219,138 @@ UserInputService.InputChanged:Connect(function(input)
 	end
 end)
 -- end c3
+
+-- === Revised Ability Attachment Assist (Semicolon Key + GUI Button) ===
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local useAbility = Remotes:WaitForChild("UseVisioniteAbility")
+
+local assistActive = false
+local assistRunning = false
+
+local function getAttachedEnemy()
+	local ap = character:FindFirstChild("AbilityWeld", true)
+	if ap and ap:IsA("AlignPosition") then
+		local rootAttachment = ap.Attachment1
+		if rootAttachment then
+			local root = rootAttachment.Parent
+			if root then
+				return root:FindFirstAncestorOfClass("Model")
+			end
+		end
+	end
+	return nil
+end
+
+local function tryAttachToClosest()
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	local closest = nil
+	local minDist = math.huge
+	for _, enemy in ipairs(workspace.Enemies:GetChildren()) do
+		local humanoid = enemy:FindFirstChildOfClass("Humanoid")
+		local root = enemy:FindFirstChild("HumanoidRootPart")
+		if enemy:IsA("Model") and humanoid and humanoid.Health > 0 and root then
+			local dist = (hrp.Position - root.Position).Magnitude
+			if dist < minDist then
+				minDist = dist
+				closest = root
+			end
+		end
+	end
+
+	if closest then
+		hrp.CFrame = closest.CFrame * CFrame.new(0, 0, 5)
+	end
+end
+
+-- GUI Button
+local assistButton = Instance.new("Frame")
+assistButton.Size = UDim2.new(0, 30, 0, 30)
+assistButton.Position = UDim2.new(0, 10, 1, -150)
+assistButton.AnchorPoint = Vector2.new(0, 1)
+assistButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+assistButton.BackgroundTransparency = 0.2
+assistButton.BorderSizePixel = 0
+assistButton.Parent = screenGui
+
+local assistText = Instance.new("TextLabel")
+assistText.Size = UDim2.new(1, 0, 1, 0)
+assistText.BackgroundTransparency = 1
+assistText.Text = ";"
+assistText.TextColor3 = Color3.new(1, 1, 1)
+assistText.TextScaled = true
+assistText.Font = Enum.Font.Jura
+assistText.Parent = assistButton
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.Semicolon then
+		assistActive = not assistActive
+		assistButton.BackgroundColor3 = assistActive and Color3.fromRGB(190, 0, 190) or Color3.fromRGB(60, 60, 60)
+	end
+end)
+
+task.spawn(function()
+	while true do
+		if assistActive and not assistRunning then
+			-- Check if any valid enemy exists
+			local hasEnemy = false
+			for _, enemy in ipairs(workspace.Enemies:GetChildren()) do
+				local hum = enemy:FindFirstChildOfClass("Humanoid")
+				if hum and hum.Health > 0 then
+					hasEnemy = true
+					break
+				end
+			end
+
+			if hasEnemy then
+				assistRunning = true
+				useAbility:FireServer()
+
+				task.delay(0.75, function()
+					if not assistActive then return end
+					if not getAttachedEnemy() then
+						tryAttachToClosest()
+					end
+				end)
+
+				task.spawn(function()
+					while assistActive do
+						local attached = getAttachedEnemy()
+						if attached then
+							local humanoid = attached:FindFirstChildOfClass("Humanoid")
+							if humanoid then
+								humanoid.Died:Wait()
+								if assistActive then
+									useAbility:FireServer()
+									task.delay(0.75, function()
+										if not getAttachedEnemy() then
+											tryAttachToClosest()
+										end
+									end)
+								end
+								break
+							end
+						end
+						task.wait(0.1)
+					end
+					assistRunning = false
+				end)
+			end
+		end
+		task.wait(0.1)
+	end
+end)
+
+-- Keep GUI on character respawn
+player.CharacterAdded:Connect(function(newChar)
+	character = newChar
+end)
+
+
+-- end c3.5
 
 -- FOV Visualization (circular outline)
 local fovCircle = Instance.new("Frame")
