@@ -216,6 +216,32 @@ for i, npcState in ipairs(npcTabs) do
 	})
 
 	tab:CreateToggle({
+		Name = "follow my mouse",
+		CurrentValue = false,
+		Callback = function(enabled)
+			if npcState.MouseFollowCon then
+				npcState.MouseFollowCon:Disconnect()
+				npcState.MouseFollowCon = nil
+			end
+			if enabled then
+				npcState.MouseFollowCon = Services.RunService.RenderStepped:Connect(function()
+					local npc = npcState.Slot
+					local hum = npc and npc:FindFirstChildOfClass("Humanoid")
+					local hrp = npc and npc:FindFirstChild("HumanoidRootPart")
+					local targetPos = mouse.Hit and mouse.Hit.Position
+					if npc and hum and hrp and hrp.ReceiveAge == 0 and targetPos then
+						hum:MoveTo(targetPos)
+						if hum.WalkSpeed < 32 then
+							hum.WalkSpeed = 32
+						end
+					end
+				end)
+			end
+		end,
+	})
+
+
+	tab:CreateToggle({
 		Name = "contol it (buggy)",
 		CurrentValue = false,
 		Callback = function(on)
