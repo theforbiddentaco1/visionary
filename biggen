@@ -1,0 +1,483 @@
+wait(5)
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local enemiesFolder = workspace:WaitForChild("Enemies")
+local soundsFolder = workspace:WaitForChild("Sounds")
+local camera = workspace.CurrentCamera
+
+local meow = 13
+local meow_tp = 7
+local targetSize = Vector3.new(meow, meow, meow)
+local targetSizeTP = Vector3.new(meow_tp, meow_tp, meow_tp)
+local modeLabels = {"tp", "fov", "aim", "xx"}
+local currentMode = 1
+local smoothing = 250
+local fovRadius = 50
+local originalSizes = {}
+
+local metronome = soundsFolder:FindFirstChild("metronome")
+local hitmarker = soundsFolder:FindFirstChild("hitmarker")
+if metronome then metronome.Volume = 0 end
+if hitmarker then hitmarker.Volume = 0 end
+
+local function setTempoWatcher()
+	if character:GetAttribute("Tempo") ~= 1500 then
+		character:SetAttribute("Tempo", 1500)
+	end
+	character:GetAttributeChangedSignal("Tempo"):Connect(function()
+		if character:GetAttribute("Tempo") ~= 1500 then
+			character:SetAttribute("Tempo", 1500)
+		end
+	end)
+end
+setTempoWatcher()
+player.CharacterAdded:Connect(function(newChar)
+	character = newChar
+	task.wait(1)
+	setTempoWatcher()
+end)
+
+local function watchAndCleanup(enemy)
+	local humanoid = enemy:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		if humanoid.Health <= 0 then
+			originalSizes[enemy] = nil
+			enemy:Destroy()
+			return
+		end
+		humanoid.HealthChanged:Connect(function(health)
+			if health <= 0 and enemy.Parent then
+				originalSizes[enemy] = nil
+				enemy:Destroy()
+			end
+		end)
+	end
+end
+-- end c1
+
+local gui = player:WaitForChild("PlayerGui"):FindFirstChild("ModeGui")
+if not gui then
+	gui = Instance.new("ScreenGui")
+	gui.Name = "ModeGui"
+	gui.ResetOnSpawn = false
+	gui.Parent = player:WaitForChild("PlayerGui")
+
+	for i, label in ipairs(modeLabels) do
+		local frame = Instance.new("Frame", gui)
+		frame.Name = "Mode"..i
+		frame.Size = UDim2.new(0, 50, 0, 20)
+		frame.Position = UDim2.new(0, 10, 1, -(i * 30))
+		frame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+
+		local text = Instance.new("TextLabel", frame)
+		text.Size = UDim2.new(1, 0, 1, 0)
+		text.BackgroundTransparency = 1
+		text.Text = label
+		text.Font = Enum.Font.Jura
+		text.TextScaled = true
+		text.TextColor3 = Color3.new(1, 1, 1)
+	end
+
+	local smoothSlider = Instance.new("Frame", gui)
+	smoothSlider.Name = "SmoothnessSlider"
+	smoothSlider.Position = UDim2.new(0, 70, 1, -60)
+	smoothSlider.Size = UDim2.new(0, 120, 0, 20)
+	smoothSlider.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+
+	local smoothFill = Instance.new("Frame", smoothSlider)
+	smoothFill.Name = "Fill"
+	smoothFill.Size = UDim2.new((500 - smoothing) / 500, 0, 1, 0)
+	smoothFill.BackgroundColor3 = Color3.fromRGB(0, 200, 75)
+	smoothFill.BorderSizePixel = 0
+
+	local smoothLabel = Instance.new("TextLabel", smoothSlider)
+	smoothLabel.Name = "Label"
+	smoothLabel.Size = UDim2.new(1, 0, 1, 0)
+	smoothLabel.BackgroundTransparency = 1
+	smoothLabel.Text = "Smoothness: "..smoothing
+	smoothLabel.Font = Enum.Font.Jura
+	smoothLabel.TextScaled = true
+	smoothLabel.TextColor3 = Color3.new(1, 1, 1)
+
+	local fovSlider = Instance.new("Frame", gui)
+	fovSlider.Name = "FOVSlider"
+	fovSlider.Position = UDim2.new(0, 70, 1, -90)
+	fovSlider.Size = UDim2.new(0, 120, 0, 20)
+	fovSlider.BackgroundColor3 = Color3.fromRGB(100, 80, 120)
+
+	local fovFill = Instance.new("Frame", fovSlider)
+	fovFill.Name = "Fill"
+	fovFill.Size = UDim2.new(fovRadius / 100, 0, 1, 0)
+	fovFill.BackgroundColor3 = Color3.fromRGB(150, 100, 255)
+	fovFill.BorderSizePixel = 0
+
+	local fovLabel = Instance.new("TextLabel", fovSlider)
+	fovLabel.Name = "Label"
+	fovLabel.Size = UDim2.new(1, 0, 1, 0)
+	fovLabel.BackgroundTransparency = 1
+	fovLabel.Text = "FOV: "..fovRadius
+	fovLabel.Font = Enum.Font.Jura
+	fovLabel.TextScaled = true
+	fovLabel.TextColor3 = Color3.new(1, 1, 1)
+end
+-- end c2
+
+-- === Ability Attachment Assist Button ===
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local useAbility = Remotes:WaitForChild("UseVisioniteAbility")
+
+local assistActive = false
+local attachedEnemy = nil
+local assistDebounce = false
+
+local function getAttachedEnemy()
+	local ap = character:FindFirstChild("AbilityWeld", true)
+	if ap and ap:IsA("AlignPosition") then
+		local rootAttachment = ap.Attachment1
+		if rootAttachment then
+			local root = rootAttachment.Parent
+			if root then
+				return root:FindFirstAncestorOfClass("Model")
+			end
+		end
+	end
+	return nil
+end
+
+-- GUI Button
+local assistButton = Instance.new("Frame")
+assistButton.Size = UDim2.new(0, 30, 0, 30)
+assistButton.Position = UDim2.new(0, 10, 1, -150)
+assistButton.AnchorPoint = Vector2.new(0, 1)
+assistButton.BackgroundColor3 = Color3.fromRGB(190, 0, 190)
+assistButton.BackgroundTransparency = 0.2
+assistButton.BorderSizePixel = 0
+assistButton.Parent = screenGui
+
+local assistText = Instance.new("TextLabel")
+assistText.Size = UDim2.new(1, 0, 1, 0)
+assistText.BackgroundTransparency = 1
+assistText.Text = ";"
+assistText.TextColor3 = Color3.new(1, 1, 1)
+assistText.TextScaled = true
+assistText.Font = Enum.Font.Jura
+assistText.Parent = assistButton
+
+local function tryAttachToClosest()
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	local closest = nil
+	local minDist = math.huge
+	for _, enemy in ipairs(workspace.Enemies:GetChildren()) do
+		local humanoid = enemy:FindFirstChildOfClass("Humanoid")
+		local root = enemy:FindFirstChild("HumanoidRootPart")
+		if enemy:IsA("Model") and humanoid and humanoid.Health > 0 and root then
+			local dist = (hrp.Position - root.Position).Magnitude
+			if dist < minDist then
+				minDist = dist
+				closest = root
+			end
+		end
+	end
+
+	if closest then
+		hrp.CFrame = closest.CFrame * CFrame.new(0, 0, 5)
+	end
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.Semicolon then
+		assistActive = not assistActive
+		assistButton.BackgroundColor3 = assistActive and Color3.fromRGB(190, 0, 190) or Color3.fromRGB(60, 60, 60)
+	end
+end)
+
+task.spawn(function()
+	while true do
+		if assistActive and not assistDebounce then
+			assistDebounce = true
+
+			useAbility:FireServer()
+
+			task.delay(0.75, function()
+				local currentAttachment = getAttachedEnemy()
+				if not currentAttachment then
+					tryAttachToClosest()
+				end
+
+				-- Monitor enemy death
+				task.spawn(function()
+					while assistActive do
+						local attached = getAttachedEnemy()
+						if attached then
+							local humanoid = attached:FindFirstChildOfClass("Humanoid")
+							if humanoid then
+								humanoid.Died:Wait()
+								task.wait(0.1)
+								useAbility:FireServer()
+								break
+							end
+						end
+						task.wait(0.1)
+					end
+				end)
+			end)
+
+			task.wait(2.5)
+			assistDebounce = false
+		end
+		task.wait(0.1)
+	end
+end)
+
+-- Keep GUI on character respawn
+player.CharacterAdded:Connect(function(newChar)
+	character = newChar
+end)
+
+
+-- end c2.5??
+
+local function updateGui()
+	for i = 1, #modeLabels do
+		local frame = gui:FindFirstChild("Mode"..i)
+		if frame then
+			frame.BackgroundColor3 = (i == currentMode) and Color3.fromRGB(0, 200, 75) or Color3.fromRGB(50, 50, 50)
+		end
+	end
+	local smoothSlider = gui:FindFirstChild("SmoothnessSlider")
+	if smoothSlider then
+		local fill = smoothSlider:FindFirstChild("Fill")
+		local label = smoothSlider:FindFirstChild("Label")
+		if fill then fill.Size = UDim2.new((500 - smoothing) / 500, 0, 1, 0) end
+		if label then label.Text = "Smoothness: "..smoothing end
+	end
+	local fovSlider = gui:FindFirstChild("FOVSlider")
+	if fovSlider then
+		local fill = fovSlider:FindFirstChild("Fill")
+		local label = fovSlider:FindFirstChild("Label")
+		if fill then fill.Size = UDim2.new(fovRadius / 100, 0, 1, 0) end
+		if label then label.Text = "FOV: "..fovRadius end
+	end
+end
+updateGui()
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.L then
+		currentMode = (currentMode % #modeLabels) + 1
+		updateGui()
+	elseif input.KeyCode == Enum.KeyCode.P then
+		currentMode = 0
+		updateGui()
+		for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+			local root = enemy:FindFirstChild("HumanoidRootPart")
+			if root and originalSizes[enemy] then
+				pcall(function()
+					root.Size = originalSizes[enemy]
+				end)
+			end
+		end
+	end
+end)
+
+local draggingSmooth = false
+local draggingFOV = false
+
+local smoothSlider = gui:FindFirstChild("SmoothnessSlider")
+local fovSlider = gui:FindFirstChild("FOVSlider")
+
+local function setSmoothFromX(x)
+	local rel = math.clamp((x - smoothSlider.AbsolutePosition.X) / smoothSlider.AbsoluteSize.X, 0, 1)
+	smoothing = math.clamp(math.floor(500 - (rel * 500)), 1, 500)
+	updateGui()
+end
+
+local function setFOVFromX(x)
+	local rel = math.clamp((x - fovSlider.AbsolutePosition.X) / fovSlider.AbsoluteSize.X, 0, 1)
+	fovRadius = math.clamp(math.floor(rel * 100), 1, 100)
+	updateGui()
+end
+
+if smoothSlider then
+	smoothSlider.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			draggingSmooth = true
+			setSmoothFromX(input.Position.X)
+		end
+	end)
+end
+
+if fovSlider then
+	fovSlider.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			draggingFOV = true
+			setFOVFromX(input.Position.X)
+		end
+	end)
+end
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		draggingSmooth = false
+		draggingFOV = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement then
+		if draggingSmooth then setSmoothFromX(input.Position.X) end
+		if draggingFOV then setFOVFromX(input.Position.X) end
+	end
+end)
+-- end c3
+
+-- FOV Visualization (circular outline)
+local fovCircle = Instance.new("Frame")
+fovCircle.Name = "FOVCircle"
+fovCircle.BackgroundTransparency = 1
+fovCircle.BorderSizePixel = 0
+fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircle.Parent = gui
+
+local uiCorner = Instance.new("UICorner", fovCircle)
+local uiStroke = Instance.new("UIStroke", fovCircle)
+uiStroke.Color = Color3.fromRGB(200, 100, 255)
+uiStroke.Thickness = 3
+uiStroke.Transparency = 0.5
+
+local function updateFOVCircleSize(radius)
+    local diameter = radius * 2
+    fovCircle.Size = UDim2.new(0, diameter, 0, diameter)
+    fovCircle.Position = UDim2.new(0.5, 0, 0.5, -27.5)
+    uiCorner.CornerRadius = UDim.new(0, diameter / 2)
+end
+
+RunService.RenderStepped:Connect(function()
+    fovCircle.Visible = (currentMode == 2)
+    if currentMode == 2 then
+        local radius = fovRadius * 3
+        updateFOVCircleSize(radius)
+    end
+end)
+
+RunService:BindToRenderStep("Aimbot", Enum.RenderPriority.Camera.Value + 1, function()
+    if currentMode ~= 2 and currentMode ~= 3 then return end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    local camera = workspace.CurrentCamera
+    if not hrp or not camera then return end
+
+    local closest, closestDist = nil, math.huge
+    for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+        local name = enemy.Name
+        if not string.find(name, "Digger") then
+            local humanoid = enemy:FindFirstChildOfClass("Humanoid")
+            local head = enemy:FindFirstChild("Head", true)
+            if humanoid and head and humanoid.Health > 0 then
+                local toEnemy = (head.Position - hrp.Position)
+                local lookVector = hrp.CFrame.LookVector
+                local angle = math.deg(math.acos(lookVector:Dot(toEnemy.Unit)))
+
+                if currentMode == 2 and angle <= fovRadius then
+                    local dist = toEnemy.Magnitude
+                    if dist < closestDist then
+                        closest = head
+                        closestDist = dist
+                    end
+                elseif currentMode == 3 then
+                    local dist = toEnemy.Magnitude
+                    if dist < closestDist then
+                        closest = head
+                        closestDist = dist
+                    end
+                end
+            end
+        end
+    end
+
+    if closest then
+        local goal = CFrame.new(camera.CFrame.Position, closest.Position)
+        camera.CFrame = camera.CFrame:Lerp(goal, math.clamp((500 - smoothing) / 500, 0, 1))
+    end
+end)
+-- end c4
+
+task.spawn(function()
+	while true do
+		if currentMode == 1 then
+			local hrp = character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				local targetCFrame = hrp.CFrame * CFrame.new(0, 0, -15)
+				local closest, closestDist = nil, math.huge
+				for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+					local name = enemy.Name
+					if string.find(name, "Digger") then continue end
+					local humanoid = enemy:FindFirstChildOfClass("Humanoid")
+					local root = enemy:FindFirstChild("HumanoidRootPart")
+					if humanoid and root and humanoid.Health > 0 then
+						if not string.find(name, "Convoy") and not string.find(name, "Golem") and not string.find(name, "Factory") then
+							if enemy:FindFirstChild("HunterHighlight", true) then
+								closest = enemy
+								break
+							elseif (root.Position - hrp.Position).Magnitude < closestDist then
+								closest = enemy
+								closestDist = (root.Position - hrp.Position).Magnitude
+							end
+						end
+					end
+				end
+				if closest and closest.PrimaryPart then
+					closest:SetPrimaryPartCFrame(targetCFrame)
+				elseif closest then
+					local root = closest:FindFirstChild("HumanoidRootPart")
+					if root then
+						pcall(function() closest.PrimaryPart = root end)
+						if closest.PrimaryPart then
+							closest:SetPrimaryPartCFrame(targetCFrame)
+						end
+					end
+				end
+			end
+		end
+		task.wait(0.1)
+	end
+end)
+
+while true do
+	for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+		local name = enemy.Name
+		local root = enemy:FindFirstChild("HumanoidRootPart")
+		local humanoid = enemy:FindFirstChildOfClass("Humanoid")
+		local hasHighlight = enemy:FindFirstChild("HunterHighlight", true)
+		local isBlacklisted = string.find(name, "Convoy") or string.find(name, "Golem") or string.find(name, "Factory")
+
+		if root and root:IsA("BasePart") and not isBlacklisted then
+			if not originalSizes[enemy] then
+				originalSizes[enemy] = root.Size
+			end
+			if currentMode == 1 then
+				root.Size = targetSizeTP
+				root.Transparency = 0.9
+			elseif currentMode == 4 then
+				if hasHighlight then
+					root.Size = Vector3.new(8, 8, 8)
+				else
+					root.Size = originalSizes[enemy]
+				end
+			else
+				root.Size = targetSize
+				root.Transparency = 0.9
+			end
+		end
+
+		watchAndCleanup(enemy)
+	end
+	task.wait(0.1)
+end
